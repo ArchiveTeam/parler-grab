@@ -1,0 +1,8 @@
+*~
+*.pyc
+wget-lua
+wget-at
+STOP
+BANNED
+data/
+test/
