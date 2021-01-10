@@ -55,7 +55,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210110.05'
+VERSION = '20210110.06'
 USER_AGENT = 'Archive Team'
 TRACKER_ID = 'parler'
 TRACKER_HOST = 'trackerproxy.archiveteam.org'
@@ -124,7 +124,7 @@ class PrepareDirectories(SimpleTask):
             time.strftime('%Y%m%d-%H%M%S')
         ])
 
-        open('%(item_dir)s/%(warc_file_base)s.warc.gz' % item, 'w').close()
+        open('%(item_dir)s/%(warc_file_base)s.warc.zst' % item, 'w').close()
         open('%(item_dir)s/%(warc_file_base)s_data.txt' % item, 'w').close()
 
 class MoveFiles(SimpleTask):
@@ -132,8 +132,8 @@ class MoveFiles(SimpleTask):
         SimpleTask.__init__(self, 'MoveFiles')
 
     def process(self, item):
-        os.rename('%(item_dir)s/%(warc_file_base)s.warc.gz' % item,
-              '%(data_dir)s/%(warc_file_base)s.warc.gz' % item)
+        os.rename('%(item_dir)s/%(warc_file_base)s.warc.zst' % item,
+              '%(data_dir)s/%(warc_file_base)s.%(dict_project)s.%(dict_id)s.warc.zst' % item)
         os.rename('%(item_dir)s/%(warc_file_base)s_data.txt' % item,
               '%(data_dir)s/%(warc_file_base)s_data.txt' % item)
 
@@ -291,7 +291,7 @@ pipeline = Pipeline(
         defaults={'downloader': downloader, 'version': VERSION},
         file_groups={
             'data': [
-                ItemInterpolation('%(item_dir)s/%(warc_file_base)s.warc.gz')
+                ItemInterpolation('%(item_dir)s/%(warc_file_base)s.warc.zst')
             ]
         },
         id_function=stats_id_function,
@@ -305,7 +305,7 @@ pipeline = Pipeline(
             downloader=downloader,
             version=VERSION,
             files=[
-                ItemInterpolation('%(data_dir)s/%(warc_file_base)s.warc.gz'),
+                ItemInterpolation('%(data_dir)s/%(warc_file_base)s.%(dict_project)s.%(dict_id)s.warc.zst'),
                 ItemInterpolation('%(data_dir)s/%(warc_file_base)s_data.txt')
             ],
             rsync_target_source_path=ItemInterpolation('%(data_dir)s/'),
