@@ -52,10 +52,11 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210110.01'
+VERSION = '20210110.02'
 USER_AGENT = 'Archive Team'
 TRACKER_ID = 'parler'
 TRACKER_HOST = 'trackerproxy.archiveteam.org'
+MULTI_ITEM_SIZE = 4
 
 
 ###########################################################################
@@ -104,8 +105,9 @@ class PrepareDirectories(SimpleTask):
 
     def process(self, item):
         item_name = item['item_name']
-        escaped_item_name = item_name.replace(':', '_').replace('/', '_').replace('~', '_')
-        dirname = '/'.join((item['data_dir'], escaped_item_name[:30]))
+        item_name_hash = hashlib.sha1(item_name.encode('utf8')).hexdigest()
+        escaped_item_name = item_name_hash
+        dirname = '/'.join((item['data_dir'], escaped_item_name))
 
         if os.path.isdir(dirname):
             shutil.rmtree(dirname)
@@ -115,8 +117,7 @@ class PrepareDirectories(SimpleTask):
         item['item_dir'] = dirname
         item['warc_file_base'] = '-'.join([
             self.warc_prefix,
-            #escaped_item_name[:45],
-            hashlib.sha1(item_name.encode('utf8')).hexdigest(),
+            item_name_hash,
             time.strftime('%Y%m%d-%H%M%S')
         ])
 
@@ -160,7 +161,6 @@ class WgetArgs(object):
             WGET_AT,
             '-U', USER_AGENT,
             '-nv',
-            '--header', 'Cookie: jst=eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uSWQiOjI0MzA1NTM3LCJ1c2VySWQiOjE1NTY4ODY0LCJwZXJtaXNzaW9ucyI6MjU2LCJ2ZXJpZmllZCI6ZmFsc2UsImlhdCI6MTYxMDI4NTAyMSwiZXhwIjoxNjEwMjg1MzIxfQ.1XHTNxJzP_20dMY7bAIwW-EfzIfYuiEnnhlN-qzZestgng-cwPWirRXbPdfGi9tkhF1HUpQ0XCgqiJ3UHsJV-A; mst=s%3AguF4Diq48gXITWH984v56tnoxYae2LKsOnE1CkggdsRsdjkyPugPWvHm5cvqKApKf6HAZQsPjFVNX7GFwN17ucnJyMFcbad2pYqlz1xvhkeCRg3cdSI1Djijs7VsBelV.7s09Z4U%2BaEql%2FQJ7RMchnrYkd%2F4h4h3LCW%2FH2rUAYWI',
             '--content-on-error',
             '--lua-script', 'parler.lua',
             '-o', ItemInterpolation('%(item_dir)s/wget.log'),
@@ -181,23 +181,23 @@ class WgetArgs(object):
             '--warc-header', 'operator: Archive Team',
             '--warc-header', 'x-wget-at-project-version: ' + VERSION,
             '--warc-header', 'x-wget-at-project-name: ' + TRACKER_ID,
-            '--warc-header', 'x-wget-at-project-item-name: ' + item['item_name'],
             '--warc-dedup-url-agnostic',
         ]
 
-        item_name = item['item_name']
-        item_type, item_value = item_name.split(':')
+        for item_name in item['item_name'].split('\0'):
+            wget_args.extend(['--warc-header', 'x-wget-at-project-item-name: '+item_name])
+            wget_args.append('item-name://'+item_name)
+            item_type, item_value = item_name.split(':', 1)
+            if item_type == 'post':
+                wget_args.extend(['--warc-header', 'parler-post: {}'.format(item_value)])
+                wget_args.append('https://parler.com/post/{}'.format(item_value))
+            elif item_type == 'profile':
+                wget_args.extend(['--warc-header', 'parler-post: {}'.format(item_value)])
+                wget_args.append('https://parler.com/profile/{}'.format(item_value))
+            else:
+                raise ValueError('item_type not supported.')
 
-        item['item_type'] = item_type
-        item['item_value'] = item_value
-
-        if item_type == 'posts':
-            start, end = item_value.split('-', 1)
-            for i in range(int(start), int(end)+1):
-                wget_args.extend(['--warc-header', 'parler-post: {}'.format(i)])
-                wget_args.append('https://api.parler.com/v3/uuidConversion/post/{}'.format(i))
-        else:
-            raise ValueError('item_type not supported.')
+        item['item_name_newline'] = item['item_name'].replace('\0', '\n')
 
         if 'bind_address' in globals():
             wget_args.extend(['--bind-address', globals()['bind_address']])
@@ -223,8 +223,9 @@ project = Project(
 
 pipeline = Pipeline(
     CheckIP(),
-    GetItemFromTracker('http://%s/%s' % (TRACKER_HOST, TRACKER_ID), downloader,
-        VERSION),
+    GetItemFromTracker('http://{}/{}/multi={}/'
+        .format(TRACKER_HOST, TRACKER_ID, MULTI_ITEM_SIZE),
+        downloader, VERSION),
     PrepareDirectories(warc_prefix='parler'),
     WgetDownload(
         WgetArgs(),
@@ -232,8 +233,6 @@ pipeline = Pipeline(
         accept_on_exit_code=[0, 4, 8],
         env={
             'item_dir': ItemValue('item_dir'),
-            'item_type': ItemValue('item_type'),
-            'item_value': ItemValue('item_value'),
             'warc_file_base': ItemValue('warc_file_base'),
         }
     ),

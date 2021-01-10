@@ -3,10 +3,9 @@ dofile("urlcode.lua")
 local urlparse = require("socket.url")
 local http = require("socket.http")
 
-local item_value = os.getenv('item_value')
-local item_type = os.getenv('item_type')
 local item_dir = os.getenv('item_dir')
 local warc_file_base = os.getenv('warc_file_base')
+local item_type = nil
 
 local url_count = 0
 local tries = 0
@@ -15,6 +14,7 @@ local addedtolist = {}
 local abortgrab = false
 
 local outlinks = {}
+local discovered = {}
 
 if urlparse == nil or http == nil then
   io.stdout:write("socket not corrently installed.\n")
@@ -55,9 +55,14 @@ allowed = function(url, parenturl)
     tested[s] = tested[s] + 1
   end
 
-  if item_type == "posts"
+  if item_type == "post"
     and string.match(url, "^https?://images%.parler%.com/") then
     return false
+  end
+
+  local match = string.match(url, "^https?://[^/]*parler%.com/profile/([^/%?&]+)")
+  if match then
+    discovered["profile:" .. match] = true
   end
 
   if string.match(url, "^https?://images%.parler%.com/")
@@ -68,15 +73,22 @@ allowed = function(url, parenturl)
     return true
   end
 
-  for s in string.gmatch(url, "([0-9a-f]+)") do
-    if ids[s] then
-      return true
+  if item_type == "post" then
+    for s in string.gmatch(url, "([0-9a-f]+)") do
+      if ids[s] then
+        return true
+      end
     end
-  end
-
-  for s in string.gmatch(url, "([0-9]+)") do
-    if ids[s] then
-      return true
+    for s in string.gmatch(url, "([0-9]+)") do
+      if ids[s] then
+        return true
+      end
+    end
+  elseif item_type == "profile" then
+    for s in string.gmatch(url, "([0-9a-zA-Z%.%-_]+)") do
+      if ids[s] then
+        return true
+      end
     end
   end
 
@@ -104,12 +116,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     url_ = string.match(url_, "^(.-)/?$")
     if (downloaded[url_] ~= true and addedtolist[url_] ~= true)
       and allowed(url_, origurl) then
-      table.insert(urls, {
-        url=url_,
-        headers={
-          ["Cookie"]=""
-        }
-      })
+      table.insert(urls, { url=url_ })
       addedtolist[url_] = true
       addedtolist[url] = true
     end
@@ -190,6 +197,10 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       check("https://parler.com/post/" .. id)
       check("https://share.par.pw/post/" .. id)
     end
+    local match = string.match(url, "^https?://[^/]*parler%.com/post/([0-9a-f]+)$")
+    if match then
+      check("https://share.par.pw/post/" .. match)
+    end
     for newurl in string.gmatch(string.gsub(html, "&quot;", '"'), '([^"]+)') do
       checknewurl(newurl)
     end
@@ -220,8 +231,20 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
   io.stdout:write(url_count .. "=" .. status_code .. " " .. url["url"] .. "  \n")
   io.stdout:flush()
 
-  if string.match(url["url"], "^https?://api%.parler%.com/v3/uuidConversion/") then
-    ids[string.match(url["url"], "([0-9]+)$")] = true
+  --if string.match(url["url"], "^https?://api%.parler%.com/v3/uuidConversion/") then
+  --  ids[string.match(url["url"], "([0-9]+)$")] = true
+  --end
+
+  local match = string.match(url["url"], "^https?://[^/]*parler%.com/post/([0-9a-f]+)$")
+  if match then
+    ids[match] = true
+    item_type = "post"
+  end
+
+  local match = string.match(url["url"], "^https?://[^/]*parler%.com/profile/([0-9a-zA-Z%.%-_]+)$")
+  if match then
+    ids[match] = true
+    item_type = "profile"
   end
 
   if string.match(url["url"], "^https?://share%.par%.pw/post/") then
@@ -230,7 +253,8 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
 
   if status_code >= 300 and status_code <= 399 then
     local newloc = urlparse.absolute(url["url"], http_stat["newloc"])
-    if string.match(url["url"], "^https?://api%.parler%.com/l/") then
+    if string.match(url["url"], "^https?://api%.parler%.com/l/")
+      and not allowed(newloc, nil) then
       outlinks[newloc] = true
     end
     if downloaded[newloc] == true or addedtolist[newloc] == true
@@ -286,30 +310,37 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
 end
 
 wget.callbacks.finish = function(start_time, end_time, wall_time, numurls, total_downloaded_bytes, total_download_time)
-  local items = nil
-  for item, _ in pairs(outlinks) do
-    print('found item', item)
-    if items == nil then
-      items = item
-    else
-      items = items .. "\0" .. item
-    end
-  end
-  if items ~= nil then
-    local tries = 0
-    while tries < 10 do
-      local body, code, headers, status = http.request(
-        "http://blackbird-amqp.meo.ws:23038/urls-t05crln9brluand/",
-        items
-      )
-      if code == 200 or code == 409 then
-        break
+  local discos = {
+    ["parler-fai8ohqu0phi9loh"]=discovered,
+    ["urls-t05crln9brluand"]=outlinks
+  }
+  for k, d in pairs(discos) do
+    local items = nil
+    for item, _ in pairs(d) do
+      print('found item', item)
+      if items == nil then
+        items = item
+      else
+        items = items .. "\0" .. item
       end
-      os.execute("sleep " .. math.floor(math.pow(2, tries)))
-      tries = tries + 1
     end
-    if tries == 10 then
-      abortgrab = true
+
+    if items ~= nil then
+      local tries = 0
+      while tries < 10 do
+        local body, code, headers, status = http.request(
+          "http://blackbird-amqp.meo.ws:23038/" .. k .. "/",
+          items
+        )
+        if code == 200 or code == 409 then
+          break
+        end
+        os.execute("sleep " .. math.floor(math.pow(2, tries)))
+        tries = tries + 1
+      end
+      if tries == 10 then
+        abortgrab = true
+      end
     end
   end
 end
