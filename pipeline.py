@@ -52,7 +52,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20210110.03'
+VERSION = '20210110.04'
 USER_AGENT = 'Archive Team'
 TRACKER_ID = 'parler'
 TRACKER_HOST = 'trackerproxy.archiveteam.org'
@@ -194,6 +194,8 @@ class WgetArgs(object):
             elif item_type == 'profile':
                 wget_args.extend(['--warc-header', 'parler-post: {}'.format(item_value)])
                 wget_args.append('https://parler.com/profile/{}'.format(item_value))
+            elif item_type == 'url':
+                wget_args.append(item_value)
             else:
                 raise ValueError('item_type not supported.')
 

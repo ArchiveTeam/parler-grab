@@ -67,8 +67,15 @@ allowed = function(url, parenturl)
 
   if string.match(url, "^https?://images%.parler%.com/")
     or string.match(url, "^https?://image%-cdn%.parler%.com/")
-    or string.match(url, "^https?://video%.parler%.com/")
-    or string.match(url, "^https?://api%.parler%.com/l/")
+    or string.match(url, "^https?://video%.parler%.com/") then
+    if parenturl then
+      discovered["url:" .. url] = true
+      return false
+    end
+    return true
+  end
+
+  if string.match(url, "^https?://api%.parler%.com/l/")
     or string.match(url, "^https?://[^/]*par%.pw/") then
     return true
   end
