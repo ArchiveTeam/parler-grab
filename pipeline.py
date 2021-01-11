@@ -59,7 +59,7 @@ VERSION = '20210110.06'
 USER_AGENT = 'Archive Team'
 TRACKER_ID = 'parler'
 TRACKER_HOST = 'trackerproxy.archiveteam.org'
-MULTI_ITEM_SIZE = 100
+MULTI_ITEM_SIZE = 10
 
 
 ###########################################################################
