@@ -3,6 +3,8 @@ parler-grab
 
 More information about the archiving project can be found on the ArchiveTeam wiki: [Parler](http://archiveteam.org/index.php?title=Parler)
 
+**DOES NOT WORK IN THE WARRIOR**
+
 Setup instructions
 =========================
 
