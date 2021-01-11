@@ -203,6 +203,7 @@ class WgetArgs(object):
             '--lua-script', 'parler.lua',
             '-o', ItemInterpolation('%(item_dir)s/wget.log'),
             '--no-check-certificate',
+            '--header', 'X-Forwarded-For: 73.' + '.'.join([random.randint(2, 254), random.randint(2, 254), random.randint(2, 254)]),
             '--output-document', ItemInterpolation('%(item_dir)s/wget.tmp'),
             '--truncate-output',
             '-e', 'robots=off',
